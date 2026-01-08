@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+myenv/
+venv/
+.env
+
+# Project Specific Data & Index
+data/
+index/
+models/
+rawdoc/
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+
+# Logs & Results
+*.log
+evaluation_results*.xlsx
+evaluation_with_types*.csv
+analysis_summary*.csv
+chapter1_preview.txt
+
+# Temp files
+temp_calc_test.csv
+
+# Optimization & Todos
+Optimization.md
+Todo*.md
+
