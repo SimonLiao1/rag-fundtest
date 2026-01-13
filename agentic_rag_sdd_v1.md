@@ -333,9 +333,104 @@ Evidence:
 - 上册 | 第2章 基金概述 | 基金的分类 | 表2-1
 ```
 
-### 8.2 UI 设计（可选）
-- 使用 Gradio 构建简单 Web UI
-- CLI 与 UI 共用同一 RAG 核心逻辑
+### 8.2 Web UI 设计（Gradio）
+
+系统提供基于 Gradio 的 Web UI，包含两个核心功能模块：
+
+#### 8.2.1 题目生成器模块（Question Generator）
+
+**功能概述**：
+- 基于教材知识库自动生成考试型题目
+- 支持按章节筛选、题型选择（事实型、逆向型、场景型）
+- 自动验证题目质量并输出置信度
+
+**主要组件**：
+- 章节选择器：多选下拉框，支持按书籍和章节筛选
+- 题型选择器：复选框组，选择目标题型
+- 数量滑块：设置生成题目数量（1-50题）
+- 生成按钮：触发批量生成流程
+- 结果表格：展示生成的题目、答案、来源、置信度
+- 文件下载：支持导出 JSONL 和 Excel 格式
+
+**技术实现**：
+- 复用 `scripts/generate_questions.py` 中的 `QuestionGenerationPipeline`
+- 支持进度条实时显示生成进度
+- 使用多线程并发生成（max_workers=4）
+
+#### 8.2.2 问答助手模块（Chat Assistant）
+
+**功能概述**：
+- 提供对话式问答界面，复用 `rag_pipeline_v3.py` 核心能力
+- 支持流式输出、引文溯源、置信度展示
+- 保持对话历史，支持上下文问答
+
+**主要组件**：
+- 模式切换按钮：页面右上角，切换"题目生成"与"问答助手"两个模式
+- 对话历史区域：展示用户问题和助手回答（Chatbot组件）
+- 输入框：多行文本输入，支持 Enter 换行、Ctrl+Enter 发送
+- 发送按钮：提交问题，触发 RAG 查询
+- 清空按钮：清空当前对话历史
+- 引用来源框：展示检索到的教材片段、章节位置、置信度分数
+
+**交互流程**：
+```
+用户输入问题
+  ↓
+调用 rag.query(question)
+  ↓
+流式输出答案（按句子拆分显示）
+  ↓
+追加引用来源（书籍、章节、置信度）
+  ↓
+自动滚动到最新消息
+```
+
+**引用来源格式**：
+- 显示检索到的 Top-K 文档片段（默认K=3）
+- 包含：书籍名称、章节、Rerank置信度分数、文本摘要
+- 使用虚线边框、缩进显示，与回答内容区分
+
+#### 8.2.3 UI 样式设计
+
+**主题风格**：
+- 深色主题（Dark Mode）：背景 `#0b0f19`，面板 `#1f2937`
+- 蓝色主色调：按钮 `#2563eb`，强调色 `#1d4ed8`
+- 表格样式：深色背景、浅色文字、悬停高亮
+
+**响应式布局**：
+- 左右分栏：配置区（左，30%）+ 结果区（右，70%）
+- 对话历史区域：最大高度 600px，超出自动滚动
+- 移动端适配：栅格布局，小屏幕自动堆叠
+
+#### 8.2.4 性能优化
+
+- **延迟加载**：RAG 模型和 Reranker 在首次使用时才初始化
+- **缓存策略**：对话历史存储在 `gr.State`，限制最多 50 轮
+- **并发控制**：使用锁机制防止重复提交，同一用户同时只能有一个请求
+
+#### 8.2.5 复用架构
+
+```
+UI Layer (Gradio)
+  ├── 题目生成器
+  │   └── QuestionGenerationPipeline (scripts/generate_questions.py)
+  │       ├── KnowledgeExtractor
+  │       ├── QuestionGenerator  
+  │       ├── RAGVerifier (复用 FundRAG)
+  │       └── DuplicationFilter
+  │
+  └── 问答助手
+      └── FundRAG (rag_pipeline_v3.py)
+          ├── Hybrid Retrieval (Vector + Keyword)
+          ├── Reranker (BGE)
+          ├── Intent Router (Calc vs Std)
+          └── LLM Generation (OpenAI/EFundGPT)
+```
+
+**共享组件**：
+- CLI 与 UI 共用同一 RAG 核心逻辑（`FundRAG` 类）
+- 统一的 Prompt 模板（`config/prompt_templates.py`）
+- 统一的检索索引（FAISS + SQLite FTS5）
 
 ---
 

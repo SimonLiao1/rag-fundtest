@@ -4,7 +4,10 @@ import sys
 import io
 import time
 
-def evaluate(input_file="rawdoc/validation.csv", output_file="evaluation_results.xlsx", limit=None):
+# Force unbuffered output
+sys.stdout.reconfigure(line_buffering=True)
+
+def evaluate(input_file="rawdoc/validation_set.xlsx", output_file="evaluation_results_gpt51.xlsx", limit=None):
     print(f"Loading validation set from {input_file}...", flush=True)
     
     # Lazy import to avoid long wait before first print
@@ -43,9 +46,9 @@ def evaluate(input_file="rawdoc/validation.csv", output_file="evaluation_results
         
         for index, row in df.iterrows():
             question = row['question']
-            std_answer = row.get('answer', '') or row.get('答案', '')
+            std_answer = row.get('answer', '') or row.get('答案', '') or row.get('std_answer', '')
             
-            print(f"[{index+1}/{len(df)}] Q: {question[:30]}...")
+            print(f"[{index+1}/{len(df)}] Q: {question[:30]}...", flush=True)
             
             start_time = time.time()
             try:
@@ -110,7 +113,7 @@ def evaluate(input_file="rawdoc/validation.csv", output_file="evaluation_results
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default="rawdoc/validation_set.xlsx", help="Path to input CSV/Excel")
-    parser.add_argument("--output", default="evaluation_results.xlsx", help="Path to output Excel")
+    parser.add_argument("--output", default="evaluation_results_gpt51.xlsx", help="Path to output Excel")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of questions to evaluate")
     args = parser.parse_args()
     

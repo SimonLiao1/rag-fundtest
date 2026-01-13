@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 import sys
 import io
 # Fix encoding for Windows console
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 # LangChain
 from langchain_community.vectorstores import FAISS
@@ -51,23 +52,49 @@ class FundRAG:
         )
         
     def _init_llm(self):
+        # EFundGPT Configuration (Optional overrides for LLM only)
+        # This allows keeping Embeddings on original OpenAI while moving LLM to EFundGPT
+        efund_base = os.getenv("EFUNDS_API_BASE")
+        efund_key = os.getenv("EFUNDS_API_KEY")
+        
+        # Headers for EFundGPT
+        extra_headers = {}
+        if os.getenv("EFUNDS_USER_NAME"):
+            extra_headers["Efunds-User-Name"] = os.getenv("EFUNDS_USER_NAME")
+        if os.getenv("EFUNDS_ACC_TOKEN"):
+            extra_headers["Efunds-Acc-Token"] = os.getenv("EFUNDS_ACC_TOKEN")
+        if os.getenv("EFUNDS_SOURCE"):
+            extra_headers["Efunds-Source"] = os.getenv("EFUNDS_SOURCE")
+            
+        # Common kwargs for ChatOpenAI
+        llm_kwargs = {}
+        if efund_base:
+            print(f"Using EFundGPT API Base: {efund_base}")
+            llm_kwargs["base_url"] = efund_base
+        if efund_key:
+            llm_kwargs["api_key"] = efund_key
+        if extra_headers:
+            print("Injecting EFundGPT headers...")
+            llm_kwargs["model_kwargs"] = {"extra_headers": extra_headers}
+
         # Standard Pipeline (for Fact/Negative/Scenario)
         # Load from env or default to gpt-4o-mini
-        std_model = os.getenv("RAG_LLM_MODEL", "gpt-4o-mini")
+        std_model = os.getenv("RAG_LLM_MODEL", "gpt-5.1-chat") #gpt-4o-mini
         print(f"Loading Standard LLM: {std_model}")
-        self.std_llm = ChatOpenAI(model_name=std_model, temperature=0.0)
+        self.std_llm = ChatOpenAI(model_name=std_model, temperature=0.0, **llm_kwargs)
         self.std_prompt = PromptTemplate.from_template(RAG_QA_PROMPT_TEMPLATE)
         self.std_chain = self.std_prompt | self.std_llm | StrOutputParser()
 
         # Calc Pipeline (for Calculation questions)
         # Using stronger model for reasoning (e.g. gpt-4o)
         # Fallback to 3.5 if env not set, but user requested strong model.
-        calc_model = os.getenv("CALC_MODEL_NAME", "gpt-5-mini")
+        calc_model = os.getenv("CALC_MODEL_NAME", "gpt-5.1")
         try:
-            self.calc_llm = ChatOpenAI(model_name=calc_model, temperature=0.0)
+            self.calc_llm = ChatOpenAI(model_name=calc_model, temperature=0.0, **llm_kwargs)
         except Exception as e:
             print(f"Warning: Failed to load {calc_model}, falling back to gpt-3.5-turbo. Error: {e}")
-            self.calc_llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.0)
+            # Fallback also uses the same kwargs unless it was the model itself that failed
+            self.calc_llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.0, **llm_kwargs)
             
         self.calc_prompt = PromptTemplate.from_template(CALC_QA_PROMPT_TEMPLATE)
         self.calc_chain = self.calc_prompt | self.calc_llm | StrOutputParser()
@@ -315,7 +342,7 @@ class FundRAG:
         pipeline_type = self._classify_query(question)
         
         # 1. Retrieval (Shared, now with Rerank)
-        final_docs = self.hybrid_retrieval(question, final_k=3) 
+        final_docs = self.hybrid_retrieval(question, final_k=5) 
         
         if not final_docs:
             return {
@@ -344,6 +371,67 @@ class FundRAG:
             "evidence_sources": [d['metadata'] for d in final_docs],
             "pipeline": pipeline_type,
             "retrieved_docs": final_docs # Return for debug
+        }
+    
+    def query_stream(self, question: str):
+        """
+        Entry Point with Router - Streaming Version
+        
+        Yields:
+            dict: Streaming chunks containing:
+                - type: 'metadata' (initial), 'chunk' (streaming), 'sources' (final)
+                - content: the actual content
+                - other metadata as needed
+        """
+        # 0. Router
+        pipeline_type = self._classify_query(question)
+        
+        # 1. Retrieval (Shared, now with Rerank)
+        final_docs = self.hybrid_retrieval(question, final_k=5)
+        
+        # Yield metadata first
+        yield {
+            "type": "metadata",
+            "pipeline": pipeline_type,
+            "docs_found": len(final_docs)
+        }
+        
+        if not final_docs:
+            yield {
+                "type": "chunk",
+                "content": "未在教材中找到相关信息。"
+            }
+            yield {
+                "type": "sources",
+                "evidence_sources": [],
+                "retrieved_docs": []
+            }
+            return
+        
+        # 2. Context Construction
+        context_str = self.format_context(final_docs)
+        
+        # 3. Generation (Routed) - Stream the response
+        if pipeline_type == 'calc':
+            chain = self.calc_chain
+        else:
+            chain = self.std_chain
+        
+        # Stream chunks from LLM
+        for chunk in chain.stream({
+            "context": context_str,
+            "question": question
+        }):
+            yield {
+                "type": "chunk",
+                "content": chunk
+            }
+        
+        # Yield sources at the end
+        yield {
+            "type": "sources",
+            "evidence_sources": [d['metadata'] for d in final_docs],
+            "retrieved_docs": final_docs
         }
 
 if __name__ == "__main__":

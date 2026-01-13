@@ -40,7 +40,7 @@ def is_correct(row):
     if not std or std == 'NAN': return False
     return std in pred
 
-def analyze_by_type(file_path="evaluation_results_v3.xlsx"):
+def analyze_by_type(file_path="evaluation_results.xlsx"):
     print(f"Reading {file_path}...")
     try:
         df = pd.read_excel(file_path)

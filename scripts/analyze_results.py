@@ -5,7 +5,7 @@ import io
 # Fix encoding
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-def analyze(file_path="evaluation_results_v3.xlsx"):
+def analyze(file_path="evaluation_results.xlsx"):
     try:
         print(f"Reading {file_path}...")
         df = pd.read_excel(file_path)
